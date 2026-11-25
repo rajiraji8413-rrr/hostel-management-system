@@ -1,0 +1,242 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fee Payment Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container mt-4">
+    <h2 class="mb-4">Fee Payment Management</h2>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">
+            Add Fee Payment
+        </div>
+
+        <div class="card-body">
+            <form id="paymentForm">
+                <input type="hidden" id="paymentId">
+
+                <div class="mb-3">
+                    <label class="form-label">Select Student</label>
+                    <select id="student" class="form-select" required>
+                        <option value="">Select Student</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Amount</label>
+                    <input type="number" id="amount" class="form-control"
+                           min="0.01" step="0.01" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Payment Status</label>
+                    <select id="payment_status" class="form-select" required>
+                        <option value="Paid">Paid</option>
+                        <option value="Pending">Pending</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save Payment</button>
+                <button type="button" class="btn btn-secondary"
+                        onclick="resetForm()">Clear</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white">
+            Payment Records
+        </div>
+
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Student</th>
+                            <th>Amount</th>
+                            <th>Payment Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_URL = "/api/payments/";
+const STUDENT_URL = "/api/students/";
+
+let payments = [];
+
+function getCSRFToken() {
+    const cookie = document.cookie
+        .split("; ")
+        .find(row => row.startsWith("csrftoken="));
+
+    return cookie ? cookie.split("=")[1] : "";
+}
+
+async function loadStudents() {
+    const response = await fetch(STUDENT_URL, {
+        credentials: "same-origin"
+    });
+
+    if (!response.ok) {
+        alert("Unable to load students. Please log in first.");
+        return;
+    }
+
+    const students = await response.json();
+    const dropdown = document.getElementById("student");
+
+    dropdown.innerHTML = '<option value="">Select Student</option>';
+
+    students.forEach(item => {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.student_name;
+        dropdown.appendChild(option);
+    });
+}
+
+async function loadPayments() {
+    const response = await fetch(API_URL, {
+        credentials: "same-origin"
+    });
+
+    if (!response.ok) {
+        alert("Unable to load payments. Please log in first.");
+        return;
+    }
+
+    payments = await response.json();
+
+    const table = document.getElementById("paymentTable");
+    table.innerHTML = "";
+
+    payments.forEach(payment => {
+        const row = document.createElement("tr");
+
+        const values = [
+            payment.id,
+            payment.student_name || payment.student,
+            payment.amount,
+            payment.payment_date || "-",
+            payment.payment_status
+        ];
+
+        values.forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
+
+        const actions = document.createElement("td");
+
+        const editButton = document.createElement("button");
+        editButton.textContent = "Edit";
+        editButton.className = "btn btn-warning btn-sm me-2";
+        editButton.onclick = () => editPayment(payment.id);
+
+        const deleteButton = document.createElement("button");
+        deleteButton.textContent = "Delete";
+        deleteButton.className = "btn btn-danger btn-sm";
+        deleteButton.onclick = () => deletePayment(payment.id);
+
+        actions.appendChild(editButton);
+        actions.appendChild(deleteButton);
+        row.appendChild(actions);
+
+        table.appendChild(row);
+    });
+}
+
+document.getElementById("paymentForm").addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const paymentId = document.getElementById("paymentId").value;
+
+    const data = {
+        student: Number(document.getElementById("student").value),
+        amount: document.getElementById("amount").value,
+        payment_status: document.getElementById("payment_status").value
+    };
+
+    const url = paymentId ? API_URL + paymentId + "/" : API_URL;
+    const method = paymentId ? "PUT" : "POST";
+
+    const response = await fetch(url, {
+        method: method,
+        credentials: "same-origin",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCSRFToken()
+        },
+        body: JSON.stringify(data)
+    });
+
+    if (response.ok) {
+        alert("Payment saved successfully!");
+        resetForm();
+        loadPayments();
+    } else {
+        const error = await response.json();
+        alert(JSON.stringify(error));
+    }
+});
+
+function editPayment(id) {
+    const payment = payments.find(item => item.id === id);
+
+    document.getElementById("paymentId").value = payment.id;
+    document.getElementById("student").value = payment.student;
+    document.getElementById("amount").value = payment.amount;
+    document.getElementById("payment_status").value = payment.payment_status;
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function deletePayment(id) {
+    if (!confirm("Are you sure you want to delete this payment?")) {
+        return;
+    }
+
+    const response = await fetch(API_URL + id + "/", {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers: {
+            "X-CSRFToken": getCSRFToken()
+        }
+    });
+
+    if (response.ok) {
+        alert("Payment deleted successfully!");
+        loadPayments();
+    } else {
+        alert("Unable to delete payment.");
+    }
+}
+
+function resetForm() {
+    document.getElementById("paymentForm").reset();
+    document.getElementById("paymentId").value = "";
+}
+
+loadStudents();
+loadPayments();
+</script>
+
+</body>
+</html>
